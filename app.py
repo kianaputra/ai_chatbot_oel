@@ -1,11 +1,9 @@
 import streamlit as st
 import os
-
-# PERBAIKAN: Import yang benar untuk LangChain versi terbaru
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter  # ← PERBAIKAN UTAMA
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_classic.chains import RetrievalQA
 
 st.title("🤖 Chatbot Sekolah Ora et Labora")
@@ -13,7 +11,7 @@ st.markdown("Tanya apapun tentang sekolah!")
 
 # Cek API key
 if "GEMINI_API_KEY" not in st.secrets:
-    st.error("❌ API Key belum disetting! Baca petunjuk di bawah.")
+    st.error("❌ API Key belum disetting!")
     with st.expander("🔧 Cara Setting API Key"):
         st.code("""
 1. Dapatkan API Key dari https://aistudio.google.com/
@@ -22,8 +20,12 @@ if "GEMINI_API_KEY" not in st.secrets:
         """)
     st.stop()
 
-# Setup API key
+# Setup API key untuk kedua library
 os.environ["GOOGLE_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+
+# Konfigurasi tambahan untuk Gemini
+import google.generativeai as genai
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 # Cek folder data
 if not os.path.exists("data"):
@@ -54,23 +56,49 @@ if not documents:
     st.error("❌ Tidak ada dokumen yang bisa dibaca!")
     st.stop()
 
-# PERBAIKAN: Text splitter dengan import yang benar
+# Split teks
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000, 
-    chunk_overlap=200
+    chunk_size=500,    # Diperkecil dari 1000 untuk menghindari timeout
+    chunk_overlap=50
 )
 texts = text_splitter.split_documents(documents)
 
-# Buat embeddings dan vector store (pakai Google Gemini)
-with st.spinner("🧠 Memproses pengetahuan sekolah..."):
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    db = FAISS.from_documents(texts, embeddings)
+st.info(f"📄 Dokumen diproses: {len(texts)} potongan teks")
 
-# Setup LLM (Google Gemini - gratis)
+# Buat embeddings dan vector store
+with st.spinner("🧠 Memproses pengetahuan sekolah (ini bisa makan waktu 1-2 menit)..."):
+    try:
+        # Gunakan model embedding yang lebih ringan
+        embeddings = GoogleGenerativeAIEmbeddings(
+            model="models/embedding-001",
+            request_timeout=120.0  # Tambah timeout jadi 120 detik
+        )
+        
+        # Proses FAISS dalam batch yang lebih kecil
+        batch_size = 100
+        if len(texts) > batch_size:
+            st.info(f"⚙️ Memproses {len(texts)} potongan teks dalam beberapa batch...")
+            # Inisialisasi dengan batch pertama
+            db = FAISS.from_documents(texts[:batch_size], embeddings)
+            # Tambahkan sisa batch
+            for i in range(batch_size, len(texts), batch_size):
+                batch = texts[i:i+batch_size]
+                db.add_documents(batch)
+                st.progress(min(100, int((i+batch_size)/len(texts)*100)))
+        else:
+            db = FAISS.from_documents(texts, embeddings)
+        
+        st.success("✅ Database vektor berhasil dibuat!")
+    except Exception as e:
+        st.error(f"❌ Error saat membuat embeddings: {str(e)}")
+        st.info("💡 Tips: Coba restart app atau kurangi ukuran file di folder data")
+        st.stop()
+
+# Setup LLM
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
     temperature=0.3,
-    convert_system_message_to_human=True
+    request_timeout=120.0
 )
 
 # Buat QA chain
@@ -91,13 +119,14 @@ if query:
             st.write("### 🤖 Jawaban:")
             st.write(response["result"])
             
-            # Tampilkan sumber (opsional)
-            with st.expander("📖 Lihat sumber referensi"):
-                for i, doc in enumerate(response["source_documents"][:3]):
-                    st.write(f"**Sumber {i+1}:** {doc.metadata.get('source', 'Unknown')}")
-                    st.write(doc.page_content[:300] + "...")
+            # Tampilkan sumber
+            if "source_documents" in response:
+                with st.expander("📖 Lihat sumber referensi"):
+                    for i, doc in enumerate(response["source_documents"][:3]):
+                        st.write(f"**Sumber {i+1}:** {doc.metadata.get('source', 'Unknown')}")
+                        st.write(doc.page_content[:300] + "...")
                     
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
-
+            st.info("Coba tanyakan pertanyaan yang lebih sederhana dulu.")
 
