@@ -1,12 +1,12 @@
 import streamlit as st
 import os
+
+# PERBAIKAN: Import yang benar untuk LangChain versi terbaru
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter  # ← PERBAIKAN UTAMA
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.chains import RetrievalQA
-from langchain_huggingface import HuggingFaceEmbeddings as HFEmbeddings
 
 st.title("🤖 Chatbot Sekolah Ora et Labora")
 st.markdown("Tanya apapun tentang sekolah!")
@@ -54,15 +54,16 @@ if not documents:
     st.error("❌ Tidak ada dokumen yang bisa dibaca!")
     st.stop()
 
-# Split teks
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+# PERBAIKAN: Text splitter dengan import yang benar
+text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=1000, 
+    chunk_overlap=200
+)
 texts = text_splitter.split_documents(documents)
 
-# Buat embeddings dan vector store (pakai model gratis)
+# Buat embeddings dan vector store (pakai Google Gemini)
 with st.spinner("🧠 Memproses pengetahuan sekolah..."):
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    # Alternatif pakai HuggingFace (lebih lambat tapi gratis tanpa API):
-    # embeddings = HFEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     db = FAISS.from_documents(texts, embeddings)
 
 # Setup LLM (Google Gemini - gratis)
