@@ -22,7 +22,7 @@ if "GEMINI_API_KEY" not in st.secrets:
 
 # SETUP GEMINI
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-model = genai.GenerativeModel('models/gemini-1.5-pro')
+model = genai.GenerativeModel('models/gemini-1.0-pro')
 
 
 # CEK FOLDER DATA
