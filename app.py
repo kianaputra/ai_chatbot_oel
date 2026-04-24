@@ -1,3 +1,4 @@
+st.write("VERSI BARU")
 import streamlit as st
 import os
 
