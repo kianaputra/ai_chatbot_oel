@@ -1,128 +1,145 @@
 import streamlit as st
-import requests
+import os
+from langchain_community.document_loaders import TextLoader, PyPDFLoader, Docx2txtLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.llms import Ollama
+from langchain.chains import RetrievalQA
 from pathlib import Path
-import json
 
 st.set_page_config(page_title="Chatbot Sekolah", page_icon="🤖")
 st.title("🤖 Chatbot Sekolah Ora et Labora")
 st.markdown("Tanya apapun tentang sekolah!")
 
-# CEK API KEY HUGGING FACE
-if "HF_TOKEN" not in st.secrets:
-    st.error("❌ API Token Hugging Face belum disetting!")
-    with st.expander("🔧 Cara Setting API Key"):
-        st.code("""
-1. Daftar gratis di https://huggingface.co/join
-2. Buat token di https://huggingface.co/settings/tokens
-3. Di Streamlit Cloud: Settings → Secrets
-4. Tambahkan: HF_TOKEN = "hf_xxxxxxxxxxxxx"
-        """)
+# CEK OLLAMA (akan error jika Ollama tidak berjalan)
+try:
+    # Test koneksi ke Ollama
+    test_llm = Ollama(model="llama3.2:3b")
+    test_llm.invoke("test")
+except Exception as e:
+    st.error("❌ Ollama tidak terdeteksi!")
+    st.info("""
+    **Cara mengatasi:**
+    1. Pastikan Ollama sudah terinstall di komputer/laptop Anda
+    2. Jalankan di terminal: `ollama serve`
+    3. Download model: `ollama pull llama3.2:3b` dan `ollama pull nomic-embed-text`
+    4. Restart aplikasi
+    """)
     st.stop()
-
-# SETUP API KEY
-HF_TOKEN = st.secrets["HF_TOKEN"]
 
 # CEK FOLDER DATA
 DATA_PATH = Path("data")
 if not DATA_PATH.exists():
     st.error("❌ Folder 'data' tidak ditemukan!")
-    st.info("Buat folder 'data' dan masukkan file TXT tentang sekolah")
+    st.info("Buat folder 'data' dan masukkan file TXT/PDF/DOCX tentang sekolah")
     st.stop()
 
-# BACA SEMUA FILE TEKS
-@st.cache_data
-def load_all_texts():
-    all_text = ""
-    files = list(DATA_PATH.glob("*.txt")) + list(DATA_PATH.glob("*.md"))
+# LOAD DOKUMEN
+@st.cache_resource
+def load_documents():
+    documents = []
+    files = list(DATA_PATH.glob("*.txt")) + list(DATA_PATH.glob("*.pdf")) + list(DATA_PATH.glob("*.docx"))
     
     if not files:
         return None
     
     for file in files:
         try:
-            with open(file, 'r', encoding='utf-8') as f:
-                content = f.read()
-                all_text += f"\n\n--- {file.name} ---\n{content}\n"
+            if file.suffix == ".txt":
+                loader = TextLoader(str(file), encoding="utf-8")
+            elif file.suffix == ".pdf":
+                loader = PyPDFLoader(str(file))
+            elif file.suffix == ".docx":
+                loader = Docx2txtLoader(str(file))
+            else:
+                continue
+            documents.extend(loader.load())
+            st.success(f"✅ Loaded: {file.name}")
         except Exception as e:
             st.warning(f"⚠️ Gagal baca {file.name}: {e}")
     
-    return all_text
+    return documents
 
-# LOAD DOKUMEN
+# PROSES DOKUMEN
+@st.cache_resource
+def create_vectorstore(documents):
+    # Split teks
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50
+    )
+    texts = text_splitter.split_documents(documents)
+    
+    st.info(f"📄 {len(texts)} potongan teks diproses")
+    
+    # Buat embeddings dengan Ollama LOKAL (gratis, cepat)
+    embeddings = OllamaEmbeddings(model="nomic-embed-text")
+    vectorstore = FAISS.from_documents(texts, embeddings)
+    
+    return vectorstore
+
+# LOAD DAN PROSES
 with st.spinner("📚 Membaca file dokumen sekolah..."):
-    school_data = load_all_texts()
+    docs = load_documents()
 
-if school_data is None:
-    st.error("❌ Tidak ada file .txt di folder data!")
+if docs is None:
+    st.error("❌ Tidak ada file di folder 'data'!")
+    st.info("Masukkan file .txt atau .pdf tentang sekolah ke folder 'data'")
     st.stop()
 
-st.success(f"✅ Berhasil memuat {len(school_data)} karakter pengetahuan sekolah!")
+with st.spinner("🧠 Memproses pengetahuan sekolah (proses awal hanya sekali)..."):
+    vectorstore = create_vectorstore(docs)
+    st.success("✅ Database pengetahuan siap!")
 
-# FUNGSI PAKAI HUGGING FACE (GRATIS, PASTI JALAN)
-def ask_huggingface(question, context):
-    # API URL untuk model gratis
-    API_URL = "https://api-inference.huggingface.co/models/indobenchmark/indobert-base-p1"
-    
-    # Batasi konteks
-    max_context = 2000
-    if len(context) > max_context:
-        context = context[:max_context]
-    
-    prompt = f"""Answer based on school information below:
+# SETUP LLM dengan Ollama
+@st.cache_resource
+def setup_llm():
+    return Ollama(
+        model="llama3.2:3b",
+        temperature=0.3,
+        num_predict=512  # Batasi panjang output agar cepat
+    )
 
-School Info:
-{context}
+llm = setup_llm()
 
-Question: {question}
-
-Answer:"""
-    
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
-    payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_length": 200,
-            "temperature": 0.3,
-            "return_full_text": False
-        }
-    }
-    
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload)
-        
-        if response.status_code == 200:
-            result = response.json()
-            if isinstance(result, list) and len(result) > 0:
-                return result[0].get('generated_text', 'Maaf, tidak bisa menjawab.')
-            return str(result)
-        else:
-            return f"Error API: {response.status_code} - Coba lagi nanti."
-    except Exception as e:
-        return f"Error: {str(e)}"
+# BUAT QA CHAIN
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    retriever=vectorstore.as_retriever(search_kwargs={"k": 3}),
+    return_source_documents=True
+)
 
 # INTERFACE CHAT
 st.markdown("---")
-st.info("💡 Contoh pertanyaan: 'Apa saja ekstrakurikuler?', 'Siapa nama guru?', 'Kapan jadwal sekolah?'")
+st.success("✅ Sistem siap! Silakan tanya tentang sekolah.")
 
 # Chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Tampilkan chat history
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
 
 # Input pertanyaan
 if prompt := st.chat_input("Tanya tentang sekolah..."):
-    # Tampilkan pertanyaan user
     with st.chat_message("user"):
         st.write(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Proses jawaban
     with st.chat_message("assistant"):
-        with st.spinner("🤔 Mencari jawaban..."):
-            answer = ask_huggingface(prompt, school_data)
-            st.write(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
+        with st.spinner("🔍 Mencari jawaban..."):
+            try:
+                response = qa_chain.invoke({"query": prompt})
+                answer = response["result"]
+                st.write(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+                
+                with st.expander("📖 Lihat sumber jawaban"):
+                    for i, doc in enumerate(response["source_documents"][:2]):
+                        source_name = Path(doc.metadata.get("source", "Unknown")).name
+                        st.write(f"**Sumber:** {source_name}")
+                        st.write(doc.page_content[:300] + "...")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
