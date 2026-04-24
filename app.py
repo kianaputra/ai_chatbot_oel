@@ -5,8 +5,8 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.document_loaders import Docx2txtLoader
 from langchain.text_splitter import CharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain.embeddings import OllamaEmbeddings
-from langchain.llms import Ollama
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.llms import Ollama
 from langchain.chains import RetrievalQA
 
 st.title("Chatbot Sekolah Ora et Labora 🤖")
