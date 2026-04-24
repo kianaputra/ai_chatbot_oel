@@ -1,14 +1,22 @@
+# Ganti semua import di atas dengan ini
 import streamlit as st
 import os
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2txtLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-# 🔥 (BARU): Pakai embeddings lokal dari CPU, lebih ringan dan stabil untuk cloud gratis
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains.retrieval_qa.base import RetrievalQA
 import google.generativeai as genai
 from pathlib import Path
+
+# Ini cara paling aman untuk import RetrievalQA
+try:
+    from langchain.chains import RetrievalQA
+except ImportError:
+    try:
+        from langchain.chains.retrieval_qa.base import RetrievalQA
+    except ImportError:
+        from langchain_classic.chains import RetrievalQA
 
 st.set_page_config(page_title="Chatbot Sekolah", page_icon="🤖")
 st.title("🤖 Chatbot Sekolah Ora et Labora")
