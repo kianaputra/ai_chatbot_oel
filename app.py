@@ -6,7 +6,7 @@ from langchain_community.vectorstores import FAISS
 # 🔥 (BARU): Pakai embeddings lokal dari CPU, lebih ringan dan stabil untuk cloud gratis
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
+from langchain.chains.retrieval_qa.base import RetrievalQA
 import google.generativeai as genai
 from pathlib import Path
 
