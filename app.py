@@ -61,7 +61,7 @@ st.success(f"✅ Berhasil memuat {len(school_data)} karakter pengetahuan sekolah
 # FUNGSI PAKAI HUGGING FACE (GRATIS, PASTI JALAN)
 def ask_huggingface(question, context):
     # API URL untuk model gratis
-    API_URL = "https://api-inference.huggingface.co/models/microsoft/DialoGPT-small"
+    API_URL = "https://api-inference.huggingface.co/models/valhalla/t5-small-qa-qg-hl"
     
     # Batasi konteks
     max_context = 2000
