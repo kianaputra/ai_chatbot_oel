@@ -6,7 +6,7 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader, Docx2t
 from langchain_text_splitters import RecursiveCharacterTextSplitter  # ← PERBAIKAN UTAMA
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain.chains import RetrievalQA
+from langchain_classic.chains import RetrievalQA
 
 st.title("🤖 Chatbot Sekolah Ora et Labora")
 st.markdown("Tanya apapun tentang sekolah!")
