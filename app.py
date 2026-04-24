@@ -1,12 +1,9 @@
 import streamlit as st
 import os
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.chains import RetrievalQA
+import google.generativeai as genai
 from pathlib import Path
+import pickle
+import hashlib
 
 st.set_page_config(page_title="Chatbot Sekolah", page_icon="🤖")
 st.title("🤖 Chatbot Sekolah Ora et Labora")
@@ -23,96 +20,69 @@ if "GEMINI_API_KEY" not in st.secrets:
         """)
     st.stop()
 
-# SETUP API KEY
-os.environ["GOOGLE_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+# SETUP GEMINI
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # CEK FOLDER DATA
 DATA_PATH = Path("data")
 if not DATA_PATH.exists():
     st.error("❌ Folder 'data' tidak ditemukan!")
-    st.info("Buat folder 'data' dan masukkan file TXT/PDF/DOCX tentang sekolah")
+    st.info("Buat folder 'data' dan masukkan file TXT tentang sekolah")
     st.stop()
 
-# LOAD DOKUMEN
-@st.cache_resource
-def load_documents():
-    documents = []
+# BACA SEMUA FILE TEKS
+@st.cache_data
+def load_all_texts():
+    all_text = ""
+    files = list(DATA_PATH.glob("*.txt"))
     
-    # Cari semua file txt
-    txt_files = list(DATA_PATH.glob("*.txt"))
-    
-    if not txt_files:
+    if not files:
         st.error("❌ Tidak ada file .txt di folder data!")
         return None
     
-    for file in txt_files:
+    for file in files:
         try:
-            loader = TextLoader(str(file), encoding="utf-8")
-            documents.extend(loader.load())
+            with open(file, 'r', encoding='utf-8') as f:
+                content = f.read()
+                all_text += f"\n\n--- {file.name} ---\n\n{content}"
             st.success(f"✅ Loaded: {file.name}")
         except Exception as e:
-            st.warning(f"⚠️ Gagal load {file.name}: {e}")
+            st.warning(f"⚠️ Gagal baca {file.name}: {e}")
     
-    return documents
-
-# PROSES DOKUMEN JADI VECTOR DATABASE
-@st.cache_resource
-def create_vectorstore(documents):
-    # Split teks
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50
-    )
-    texts = text_splitter.split_documents(documents)
-    
-    st.info(f"📄 {len(texts)} potongan teks diproses")
-    
-    # Buat embeddings lokal (GRATIS, CEPAT)
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
-    
-    # Buat vector store
-    vectorstore = FAISS.from_documents(texts, embeddings)
-    
-    return vectorstore
+    return all_text
 
 # LOAD DOKUMEN
 with st.spinner("📚 Membaca file dokumen sekolah..."):
-    docs = load_documents()
+    school_data = load_all_texts()
 
-if docs is None:
+if school_data is None:
     st.stop()
 
-# BUAT VECTOR STORE
-with st.spinner("🧠 Memproses pengetahuan sekolah..."):
+st.success(f"✅ Berhasil memuat pengetahuan sekolah!")
+
+# TAMPILKAN PREVIEW (opsional)
+with st.expander("📖 Lihat data sekolah yang tersedia"):
+    st.text(school_data[:500] + "...")
+
+# FUNGSI CHAT DENGAN KONTEKS
+def ask_question(question, context):
+    prompt = f"""Anda adalah asisten AI untuk Sekolah Ora et Labora.
+Jawab pertanyaan berikut berdasarkan INFORMASI SEKOLAH yang diberikan.
+Jika tidak tahu, katakan "Maaf, informasi tentang itu tidak tersedia di data sekolah."
+
+INFORMASI SEKOLAH:
+{context}
+
+PERTANYAAN: {question}
+
+JAWABAN:"""
+    
     try:
-        vectorstore = create_vectorstore(docs)
-        st.success("✅ Database pengetahuan siap!")
+        response = model.generate_content(prompt)
+        return response.text
     except Exception as e:
-        st.error(f"❌ Gagal memproses: {e}")
-        st.stop()
-
-# SETUP LLM GEMINI
-@st.cache_resource
-def setup_llm():
-    return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        temperature=0.3,
-        convert_system_message_to_human=True
-    )
-
-try:
-    llm = setup_llm()
-except Exception as e:
-    st.error(f"❌ Gagal setup LLM: {e}")
-    st.stop()
-
-# BUAT QA CHAIN
-qa_chain = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=vectorstore.as_retriever(search_kwargs={"k": 3})
-)
+        return f"Error: {str(e)}"
 
 # INTERFACE CHAT
 st.markdown("---")
@@ -136,21 +106,7 @@ if prompt := st.chat_input("Tanya tentang sekolah..."):
     
     # Proses jawaban
     with st.chat_message("assistant"):
-        with st.spinner("🤔 Mencari jawaban..."):
-            try:
-                # Panggil QA chain
-                response = qa_chain.invoke(prompt)
-                
-                # Cek response
-                if isinstance(response, dict):
-                    answer = response.get('result', 'Maaf, tidak bisa menjawab.')
-                else:
-                    answer = str(response)
-                
-                st.write(answer)
-                st.session_state.messages.append({"role": "assistant", "content": answer})
-                
-            except Exception as e:
-                error_msg = f"❌ Error: {str(e)}"
-                st.error(error_msg)
-                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+        with st.spinner("🤔 Mencari jawaban dari data sekolah..."):
+            answer = ask_question(prompt, school_data)
+            st.write(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
