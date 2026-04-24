@@ -1,5 +1,12 @@
 import streamlit as st
-import os
+import os\
+import requests
+
+headers = {
+    "Authorization": f"Bearer {api_token}",
+    "Content-Type": "application/json"
+}
+
 
 from langchain.document_loaders import PyPDFLoader, TextLoader
 from langchain.document_loaders import Docx2txtLoader
@@ -10,7 +17,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.chains import RetrievalQA
 
 # API KEY
-os.environ["OPENAI_API_KEY"] = "ISI_API_KEY_KAMU"
+api_token = os.getenv("REPLICATE_API_TOKEN")
 
 st.title("Chatbot Sekolah Ora et Labora 🤖")
 
