@@ -1,0 +1,7 @@
+streamlit
+langchain
+faiss-cpu
+pypdf
+python-docx
+requests
+replicate
