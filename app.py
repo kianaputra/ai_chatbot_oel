@@ -11,7 +11,7 @@ from langchain.chains import RetrievalQA
 
 st.title("Chatbot Sekolah Ora et Labora 🤖")
 
-# LOAD FILES
+# LOAD DOCUMENTS
 documents = []
 
 for file in os.listdir("data"):
@@ -32,7 +32,7 @@ for file in os.listdir("data"):
 text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 texts = text_splitter.split_documents(documents)
 
-# EMBEDDING LOKAL
+# EMBEDDING (LOKAL)
 embeddings = OllamaEmbeddings(model="llama3")
 db = FAISS.from_documents(texts, embeddings)
 
@@ -50,4 +50,5 @@ query = st.text_input("Tanya tentang sekolah:")
 if query:
     result = qa.run(query)
     st.write("🤖", result)
+
 
